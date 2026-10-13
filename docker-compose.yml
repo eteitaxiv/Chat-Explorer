@@ -3,7 +3,7 @@ services:
     build: .
     container_name: ST-Chat-Explorer
     ports:
-      - "10008:10008"
+      - "10008:8000"
     volumes:
       # Your SillyTavern user data folder (the one containing
       # characters/ and chats/), mounted read-only.
