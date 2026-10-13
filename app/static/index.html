@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ST Chat Explorer</title>
+<link rel="stylesheet" href="style.css?v=5">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23a0763f'/%3E%3Ctext x='16' y='23' font-size='18' font-family='Georgia' text-anchor='middle' fill='%23f7f1e3'%3EST%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<header id="topbar">
+  <a id="brand" href="#/">ST Chat <span>Explorer</span></a>
+  <div id="global-search">
+    <input id="global-q" type="search" placeholder="Search all chats and characters&hellip;  ( / )">
+    <button id="global-go" class="btn accent" title="Search">Search</button>
+  </div>
+</header>
+<div id="layout">
+  <aside id="sidebar">
+    <input id="char-filter" type="search" placeholder="Filter characters&hellip;">
+    <div id="char-list"><div class="side-note">Loading characters&hellip;</div></div>
+  </aside>
+  <main id="main"><div id="view"></div></main>
+</div>
+<div id="overlay" hidden>
+  <div class="overlay-card">
+    <h2>Indexing your archive</h2>
+    <div id="overlay-phase"></div>
+    <div class="progress"><div id="overlay-bar"></div></div>
+    <div id="overlay-count"></div>
+  </div>
+</div>
+<div id="toast" hidden></div>
+<script src="app.js?v=5"></script>
+</body>
+</html>
