@@ -5,9 +5,9 @@ services:
     ports:
       - "10008:8000"
     volumes:
-      # Your SillyTavern user data folder (the one containing
-      # characters/ and chats/), mounted read-only.
-      - ./data:/data:ro
+      # Your SillyTavern characters/ and chats/ folders, mounted read-only.
+      - ./characters:/data/characters:ro
+      - ./chats:/data/chats:ro
     environment:
       DATA_ROOT: /data
     restart: unless-stopped

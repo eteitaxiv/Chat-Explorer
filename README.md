@@ -10,16 +10,17 @@ never writes a single byte to it. Chats download byte-for-byte in their native
 ## Run it
 
 ```bash
-# point the volume at your ST user data folder (the one with characters/ and chats/)
+# point the volumes at your ST characters/ and chats/ folders
 docker compose up -d --build
 ```
 
-Then open http://localhost:8000. Replace `./data` in `docker-compose.yml` with
-your SillyTavern data path, e.g.:
+Then open http://localhost:8000. Replace `./characters` and `./chats` in
+`docker-compose.yml` with your SillyTavern paths, e.g.:
 
 ```yaml
     volumes:
-      - /home/you/SillyTavern/data/default-user:/data:ro
+      - /home/you/SillyTavern/data/default-user/characters:/data/characters:ro
+      - /home/you/SillyTavern/data/default-user/chats:/data/chats:ro
 ```
 
 The first start indexes the archive (a 700 MB archive takes roughly 10-30
