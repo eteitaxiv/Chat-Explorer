@@ -75,6 +75,14 @@ function downloadFile(avatar, file) {
   a.remove();
 }
 
+function downloadCard(avatar) {
+  const a = document.createElement("a");
+  a.href = `/api/card/${encodeURIComponent(avatar)}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 async function downloadZip(items) {
   toast("Preparing zip...");
   try {
@@ -287,6 +295,7 @@ async function renderCharacter(v) {
           <div class="char-search-row">
             <input id="in-char-q" type="search" placeholder="Search within ${esc(card.name)}...">
             <button id="in-char-go" class="btn accent">Search</button>
+            ${card.has_card ? '<button id="dl-card" class="btn" title="Download the original card file (PNG or JSON)">Download card</button>' : ""}
           </div>
           <div class="small muted">${data.totals.chats} chats &middot; ${fmtInt(data.totals.messages)} messages &middot; ${data.totals.branches} branch files</div>
         </div>
@@ -314,6 +323,9 @@ async function renderCharacter(v) {
   };
   $("#in-char-go").onclick = go;
   $("#in-char-q").addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+
+  const dlCard = $("#dl-card");
+  if (dlCard) dlCard.onclick = () => downloadCard(card.avatar);
 
   $("#dl-all").onclick = () => {
     downloadZip(data.chats.map((c) => ({ avatar: card.avatar, file: c.file })));

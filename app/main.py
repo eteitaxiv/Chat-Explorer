@@ -171,6 +171,27 @@ def api_search(
         raise HTTPException(400, str(e))
 
 
+@app.get("/api/card/{avatar}")
+def api_card_download(avatar: str):
+    require_ready()
+    card = index.cards.get(avatar)
+    if card is None or not card.has_card or not card.file:
+        raise HTTPException(404, "character card not found")
+    fname = card.file
+    if "/" in fname or "\\" in fname or fname in ("", ".", ".."):
+        raise HTTPException(400, "bad card file")
+    path = os.path.join(index.characters_dir, fname)
+    if not os.path.isfile(path):
+        raise HTTPException(404, "character card not found")
+    media = "image/png" if fname.lower().endswith(".png") else "application/json"
+    return FileResponse(
+        path,
+        media_type=media,
+        filename=fname,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(fname)}"},
+    )
+
+
 @app.get("/api/download/{avatar}/{fname}")
 def api_download(avatar: str, fname: str):
     path = _get_chat_path(avatar, fname)
