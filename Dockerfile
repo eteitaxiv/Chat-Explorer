@@ -2,8 +2,13 @@ FROM python:3.12-slim
 
 WORKDIR /srv
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends liblzma5=5.8.1-1+deb13u2 ca-certificates=20250419+deb13u1 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade "pip>=26.2.0" \
+    && pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 
