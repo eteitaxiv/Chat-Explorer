@@ -6,16 +6,14 @@ inside it. All writes (none persistent) go to temp files for zip assembly.
 from __future__ import annotations
 
 import io
-import json
 import os
-import tempfile
 import threading
 import time
 import zipfile
 from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
@@ -85,6 +83,27 @@ def api_reindex():
 def api_characters():
     require_ready()
     return {"groups": index.groups()}
+
+
+@app.get("/api/recent")
+def api_recent(limit: int = Query(8, ge=1, le=25)):
+    """Most recently updated chats across the whole archive."""
+    require_ready()
+    recent = []
+    for avatar, lst in index.chats.items():
+        for c in lst:
+            if c.mtime and not c.error:
+                recent.append(c)
+    recent.sort(key=lambda c: c.mtime, reverse=True)
+    out = []
+    for c in recent[:limit]:
+        card = index.cards.get(c.avatar)
+        out.append({
+            **c.to_api(),
+            "character": card.name if card else c.avatar,
+            "has_card": bool(card and card.has_card),
+        })
+    return {"chats": out}
 
 
 @app.get("/api/character/{avatar}")
