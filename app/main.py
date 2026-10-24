@@ -73,6 +73,14 @@ def api_status():
     return index.status()
 
 
+@app.post("/api/reindex")
+def api_reindex():
+    if not index.progress.get("ready"):
+        return {"started": False, "reason": "index build already in progress"}
+    _start_build()
+    return {"started": True}
+
+
 @app.get("/api/characters")
 def api_characters():
     require_ready()
