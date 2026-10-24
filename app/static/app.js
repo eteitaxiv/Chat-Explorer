@@ -925,4 +925,21 @@ async function boot() {
   await render();
 }
 
+async function reindex() {
+  const btn = $("#reindex-btn");
+  btn.disabled = true;
+  try {
+    const r = await api("/api/reindex", { method: "POST" });
+    if (!r.started) return;
+    $("#overlay").hidden = false;
+    await waitForIndex();
+    await loadSidebar();
+    await render();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$("#reindex-btn").onclick = reindex;
+
 boot();
