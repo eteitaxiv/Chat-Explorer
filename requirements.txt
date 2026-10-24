@@ -1,3 +1,9 @@
-fastapi>=0.115
-uvicorn>=0.30
+fastapi>=0.129
+uvicorn>=0.38
 pillow>=13.0.0
+# transitive deps pinned ahead of known CVEs (setuptools 70.3.0,
+# urllib3 2.7.0, msgpack 1.1.2): keep the floors at or above the
+# fixed versions listed in the advisories.
+setuptools>=84.1.0
+urllib3>=2.8.0
+msgpack>=1.2.1

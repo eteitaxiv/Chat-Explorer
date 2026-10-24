@@ -55,8 +55,15 @@ function fmtDay(s) {
   return d.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" });
 }
 
+function tsOf(dateStr) {
+  if (!dateStr) return 0;
+  const t = Date.parse(dateStr);
+  return isNaN(t) ? 0 : t;
+}
+
 function markText(htmlEscapedText, q) {
   if (!q) return htmlEscapedText;
+  if (S.lastSearchOpts && S.lastSearchOpts.regex) return htmlEscapedText;
   try {
     const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
     return htmlEscapedText.replace(re, (m) => `<mark>${m}</mark>`);
@@ -117,6 +124,7 @@ const S = {
   groups: null,       // character groups from API
   sel: new Set(),     // "avatar\u0000file" selected for zip
   lastSearchOpts: null,
+  chatSort: "name",   // chat list sort key: name | recent | msgs | size
 };
 
 /* ---------- sidebar ---------- */
@@ -239,6 +247,8 @@ async function renderHome(v) {
     <h1>Your archive</h1>
     <p class="muted">Read-only browser and search for your SillyTavern characters and chats.</p>
     <div class="home-grid">${cards}</div>
+    <h2>Recently updated chats</h2>
+    <div id="recent" class="recent-list"><div class="side-note">Loading...</div></div>
     <div class="card">
       <h3>How to use</h3>
       <p>Pick a character on the left to browse their chats, or search everything from the bar above.
@@ -246,6 +256,16 @@ async function renderHome(v) {
       branches, or everywhere including reasoning traces. Chats download exactly as they are on disk,
       ready to import back into SillyTavern.</p>
     </div>`;
+  const recent = await api("/api/recent?limit=8");
+  const rows = recent.chats.map((c) => `
+    <a class="recent-row" href="#/chat/${encodeURIComponent(c.avatar)}/${encodeURIComponent(c.file)}">
+      ${c.has_card
+        ? `<img src="/api/avatar/${encodeURIComponent(c.avatar)}?w=48" loading="lazy" alt="">`
+        : `<div class="ph">${esc(c.character.slice(0, 1).toUpperCase())}</div>`}
+      <div class="rr-meta"><b>${esc(c.base_name)}</b><span>${esc(c.character)} &middot; ${fmtInt(c.msgs)} msg${c.msgs === 1 ? "" : "s"}</span></div>
+      <span class="rr-date small muted">${fmtDay(c.last_date || c.first_date)}</span>
+    </a>`).join("");
+  $("#recent").innerHTML = rows || `<div class="side-note">No chats found in the mounted folders.</div>`;
 }
 
 /* ---------- character view ---------- */
@@ -305,6 +325,14 @@ async function renderCharacter(v) {
     <div class="toolbar">
       <span id="sel-info" class="small muted"></span>
       <span class="spacer"></span>
+      <label class="small muted sort-label">Sort
+        <select id="chat-sort">
+          <option value="name">Name</option>
+          <option value="recent">Recently updated</option>
+          <option value="msgs">Most messages</option>
+          <option value="size">Largest</option>
+        </select>
+      </label>
       <button class="btn" id="select-all">Select all</button>
       <button class="btn" id="select-none">Clear</button>
       <button class="btn" id="dl-zip">Download selected</button>
@@ -313,6 +341,13 @@ async function renderCharacter(v) {
     <div id="chat-list"></div>`;
 
   renderChatTable(data.chats);
+
+  const sortSel = $("#chat-sort");
+  sortSel.value = S.chatSort;
+  sortSel.addEventListener("change", () => {
+    S.chatSort = sortSel.value;
+    renderChatTable(data.chats);
+  });
 
   const go = () => {
     const q = $("#in-char-q").value;
@@ -372,8 +407,16 @@ function chatRow(c, cardAvatar) {
 
 function renderChatTable(chats) {
   const cardAvatar = route.avatar;
+  const sorted = [...chats];
+  if (S.chatSort === "recent") {
+    sorted.sort((a, b) => tsOf(b.last_date || b.first_date) - tsOf(a.last_date || a.first_date) || a.base_name.localeCompare(b.base_name));
+  } else if (S.chatSort === "msgs") {
+    sorted.sort((a, b) => b.msgs - a.msgs || a.base_name.localeCompare(b.base_name));
+  } else if (S.chatSort === "size") {
+    sorted.sort((a, b) => b.size - a.size || a.base_name.localeCompare(b.base_name));
+  }
   const byBase = new Map();
-  for (const c of chats) {
+  for (const c of sorted) {
     if (!byBase.has(c.base_name)) byBase.set(c.base_name, { base: null, branches: [] });
     if (c.is_branch) byBase.get(c.base_name).branches.push(c);
     else byBase.get(c.base_name).base = c;
@@ -709,8 +752,12 @@ async function renderSearch(v) {
     for (const id of ["s-scope", "s-branches", "s-role", "s-model"]) {
       $("#" + id).addEventListener("change", go);
     }
+    for (const id of ["s-case", "s-word", "s-regex", "s-t-chats", "s-t-cards"]) {
+      $("#" + id).addEventListener("change", go);
+    }
     const unpin = $("#s-unpin");
-    if (unpin) unpin.onclick = () => {
+    if (unpin) unpin.onclick = (ev) => {
+      ev.stopPropagation();
       const p = new URLSearchParams(location.hash.split("?")[1] || "");
       p.delete("avatar");
       location.hash = `#/search?${p.toString()}`;
@@ -720,6 +767,7 @@ async function renderSearch(v) {
 
   const q = params.get("q");
   if (!q) return;
+  S.lastSearchOpts = { regex: !!params.get("regex") };
   $("#s-results").innerHTML = `<div class="side-note">Searching...</div>`;
   const sp = new URLSearchParams();
   sp.set("q", q);
