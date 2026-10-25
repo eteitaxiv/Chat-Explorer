@@ -23,14 +23,14 @@ Three backend modules, one frontend file:
 
 - `app/stindex.py` - Indexing. `Index.build()` runs in a daemon thread at startup: scans `characters/` (PNG `tEXt` chunks `chara`/`ccv3`, base64 JSON cards; plain `.json` cards too) and `chats/<avatar>/*.jsonl`, computing per-file stats (`chat_stats`). Everything lives in memory (`cards`, `chats`, `avatar_dir` dicts); nothing is persisted and the data root is never written to (hard invariant - the mount is `:ro`).
 - `app/search.py` - Search engine. Two-phase: `BytePrefilter` does a raw-byte needle check per file (with JSON-escaped variants), then only passing files are line-parsed and matched on decoded text via `Matcher`. `classify_message()` is the canonical decomposition of an ST message into `(kind, swipe_index, model, text)` pieces with kind in `visible`/`swipe`/`reasoning` - reuse it rather than re-deriving swipe logic. `parse_chat_full()` powers the chat viewer.
-- `app/main.py` - FastAPI routes + zip assembly + avatar resizing (Pillow). Static frontend is mounted at `/` **last**; keep the mount after all API route definitions.
+- `app/main.py` - FastAPI routes + zip assembly + avatar resizing (Pillow). Static frontend is mounted at `/` **last**; keep the mount after all API route definitions. Also hosts the cleaner routes (`/api/cleaner/*`), gated by `_probe_writable()` - a real create-and-delete probe per chat folder; the mounts may be `:ro` or owned by a uid that doesn't match the container user.
 - `app/static/app.js` - Entire SPA: hash-based routing (`parseRoute`/`render`), views rendered by building HTML strings into `#view`. No framework, no build step.
 
 Data flow: startup thread builds index -> frontend polls `/api/status` until `ready` -> sidebar from `/api/characters` -> character page `/api/character/{avatar}` -> viewer `/api/chat/{avatar}/{fname}` (re-parses the file on every request) -> search `/api/search` with ~14 query params validated against `searchmod.SCOPES`/`TARGETS`.
 
 ## Gotchas & conventions
 
-- **Read-only invariant**: never open anything under `DATA_ROOT` for writing. The only writes allowed are in-memory zip buffers for downloads (`MAX_ZIP_FILES = 2000`).
+- **Read-only invariant**: never open anything under `DATA_ROOT` for writing. The only exceptions are in-memory zip buffers for downloads (`MAX_ZIP_FILES = 2000`) and `app/cleaner.py` (branch-file deletion + in-place `.jsonl` rewrites), which must only ever be invoked through the `/api/cleaner/*` routes after the `cleaner_available()` check.
 - **Cache busting**: `index.html` references `style.css?v=5` and `app.js?v=5`. Bump the version in both `<link>`/`<script>` tags when changing static assets, or browsers serve stale files.
 - **XSS**: the frontend renders untrusted chat text via `innerHTML`; everything must pass through `esc()` in `app.js`. Search snippets come pre-escaped from the server with `<mark>` tags injected (`make_snippets`) - don't double-escape them client-side.
 - **Search scope semantics**: `scope=all` means visible + hidden swipes but **excludes reasoning traces** (they need `scope=reasoning`). See the kind filters in `search_messages`.
