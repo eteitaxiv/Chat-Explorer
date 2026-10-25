@@ -208,6 +208,9 @@ function parseRoute() {
   if (h === "search") {
     return { name: "search", params: q };
   }
+  if (h === "cleaner") {
+    return { name: "cleaner", params: q };
+  }
   return { name: "home" };
 }
 
@@ -220,6 +223,7 @@ async function render() {
     else if (route.name === "character") await renderCharacter(v);
     else if (route.name === "chat") await renderChat(v);
     else if (route.name === "search") await renderSearch(v);
+    else if (route.name === "cleaner") await renderCleaner(v);
   } catch (e) {
     v.innerHTML = `<div class="card"><h2>Something went wrong</h2><p>${esc(e.message)}</p>
       <p><a href="#/">Back to home</a></p></div>`;
@@ -920,6 +924,122 @@ function renderSearchResults(data, q, ms) {
   });
 }
 
+/* ---------- cleaner ---------- */
+
+async function renderCleaner(v) {
+  if (!S.status) S.status = await api("/api/status");
+  if (!S.status.cleaner_available) {
+    v.innerHTML = `
+      <div class="card">
+        <h2>Cleaner unavailable</h2>
+        <p>The chats folder is mounted read-only, so chat cleanup is disabled.</p>
+        <p class="small muted">To enable it, mount <code>chats</code> without <code>:ro</code> in docker-compose.yml
+        and make sure the container user can write to it (set <code>user:</code> to match the host owner).</p>
+        <p><a href="#/">Back to home</a></p>
+      </div>`;
+    return;
+  }
+  const p = route.params;
+  v.innerHTML = cleanerFormHtml(p) + `<div id="cl-results"><div class="side-note">Preview shows what a run would change. Nothing is touched until you press Apply.</div></div>`;
+  wireCleanerForm(v);
+  if (p.get("run") === "1") await runCleaner(false);
+}
+
+function cleanerFormHtml(p) {
+  return `
+  <h1>Cleaner</h1>
+  <p class="muted">Prune old branch files, strip reasoning traces, and drop unused swipes from bloated chat folders.</p>
+  <div class="search-panel">
+    <div class="row1">
+      <button id="cl-preview" class="btn accent">Preview (dry-run)</button>
+      <button id="cl-apply" class="btn danger">Apply changes</button>
+      <span id="cl-busy" class="small muted" hidden>Working&hellip;</span>
+    </div>
+    <div class="opt-grid">
+      <label><input type="checkbox" id="cl-a-branches" ${p.get("actions")?.includes("branches") || !p.get("actions") ? "checked" : ""}> Prune old branch files</label>
+      <label><input type="checkbox" id="cl-a-reasoning" ${p.get("actions")?.includes("reasoning") || !p.get("actions") ? "checked" : ""}> Strip reasoning traces</label>
+      <label><input type="checkbox" id="cl-a-swipes" ${p.get("actions")?.includes("swipes") || !p.get("actions") ? "checked" : ""}> Drop unused swipes</label>
+      <label>Min folder MB <input type="number" id="cl-min" min="0" step="1" style="width:70px" value="${esc(p.get("min_folder_mb") || "25")}"></label>
+      <label>Keep recent branches <input type="number" id="cl-keep" min="0" step="1" style="width:70px" value="${esc(p.get("keep_recent") || "20")}"></label>
+    </div>
+    <label class="small">Skip chat names (comma-separated, exact match)
+      <input type="text" id="cl-skip" style="width:100%" placeholder="15B, FB" value="${esc(p.get("skip_names") || "")}">
+    </label>
+    <div class="small muted" style="margin-top:10px">
+      Branch pruning keeps the ${"<span id='cl-keep-hint'>20</span>"} most recently modified branch files per chat and deletes the rest.
+      Dropping unused swipes keeps only the swipe you actually selected on each message — this is destructive and cannot be undone.
+    </div>
+  </div>`;
+}
+
+function cleanerOpts() {
+  const acts = [];
+  if ($("#cl-a-branches").checked) acts.push("branches");
+  if ($("#cl-a-reasoning").checked) acts.push("reasoning");
+  if ($("#cl-a-swipes").checked) acts.push("swipes");
+  if (!acts.length) { toast("Pick at least one action."); return null; }
+  return {
+    actions: acts.join(","),
+    min_folder_mb: $("#cl-min").value || "0",
+    keep_recent: $("#cl-keep").value || "0",
+    skip_names: $("#cl-skip").value,
+  };
+}
+
+function wireCleanerForm(v) {
+  $("#cl-keep").addEventListener("input", () => { $("#cl-keep-hint").textContent = $("#cl-keep").value || "0"; });
+  $("#cl-preview").onclick = () => runCleaner(false);
+  $("#cl-apply").onclick = async () => {
+    if (!confirm("Apply cleanup? Branch files will be deleted and chat files rewritten in place. This cannot be undone.")) return;
+    await runCleaner(true);
+  };
+}
+
+async function runCleaner(apply) {
+  const opts = cleanerOpts();
+  if (!opts) return;
+  const busy = $("#cl-busy");
+  const results = $("#cl-results");
+  busy.hidden = false;
+  try {
+    const qs = new URLSearchParams(opts).toString();
+    const r = apply
+      ? await api("/api/cleaner/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(opts) })
+      : await api("/api/cleaner/preview?" + qs);
+    renderCleanerResults(r, apply);
+    if (apply) {
+      toast(`Cleaned: ${fmtBytes(r.totals.bytes_freed)} freed, ${r.totals.files_deleted} files deleted, ${r.totals.files_modified} modified.`);
+      $("#overlay").hidden = false;
+      await waitForIndex();
+      await loadSidebar();
+      await render();
+    }
+  } catch (e) {
+    results.innerHTML = `<div class="card"><p>Cleaner failed: ${esc(e.message)}</p></div>`;
+    toast("Cleaner failed: " + e.message);
+  } finally {
+    busy.hidden = true;
+  }
+}
+
+function renderCleanerResults(r, applied) {
+  const t = r.totals;
+  const rows = r.folders.map((f) => {
+    const err = f.errors?.length
+      ? `<div class="small" style="color:var(--danger)">${f.errors.map((e) => esc(e.file + ": " + e.error)).join("<br>")}</div>` : "";
+    return `<tr><td>${esc(f.avatar)}</td><td>${fmtBytes(f.size)}</td><td>${fmtBytes(f.bytes_freed)}</td>
+      <td>${f.files_deleted}</td><td>${f.files_modified}</td></tr>${err ? `<tr><td colspan="5">${err}</td></tr>` : ""}`;
+  }).join("");
+  $("#cl-results").innerHTML = `
+    <h2>${applied ? "Applied" : "Dry-run preview"}</h2>
+    <p><b>${fmtBytes(t.bytes_freed)}</b> ${applied ? "freed" : "would be freed"},
+       <b>${t.files_deleted}</b> files ${applied ? "deleted" : "to delete"},
+       <b>${t.files_modified}</b> files ${applied ? "modified" : "to modify"} across ${t.folders} folder(s).</p>
+    ${rows ? `<table class="chat-table"><thead><tr><th>Folder</th><th>Size</th><th>${applied ? "Freed" : "To free"}</th><th>Deleted</th><th>Modified</th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<div class="side-note">Nothing to do — no folders matched the current settings.</div>`}
+    ${applied ? "" : `<p class="small muted">No changes were made. Press Apply to execute.</p>`}`;
+}
+
 /* ---------- global search bar ---------- */
 
 function runGlobalSearch() {
@@ -966,9 +1086,16 @@ async function waitForIndex() {
   overlay.hidden = true;
 }
 
+function syncCleanerButton() {
+  const btn = $("#cleaner-btn");
+  if (!btn) return;
+  btn.hidden = !(S.status && S.status.cleaner_available);
+}
+
 async function boot() {
   $("#overlay").hidden = false;
   await waitForIndex();
+  syncCleanerButton();
   await loadSidebar();
   await render();
 }
@@ -989,5 +1116,6 @@ async function reindex() {
 }
 
 $("#reindex-btn").onclick = reindex;
+$("#cleaner-btn").onclick = () => { location.hash = "#/cleaner"; };
 
 boot();

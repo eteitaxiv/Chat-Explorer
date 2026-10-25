@@ -2,12 +2,22 @@ services:
   app:
     build: .
     container_name: ST-Chat-Explorer
+    # Run as the same uid:gid that owns your SillyTavern data on the host,
+    # so the cleaner can write to the chats folder without messing up
+    # SillyTavern's own permissions. Use `id -u` and `id -g` on the host
+    # to find the right values (e.g. 1000:1000, 0:0, 100999:100999).
+    # Leave it unset to use the image default (1000:1000).
+    # user: 1000:1000
     ports:
       - "10008:8000"
     volumes:
-      # Your SillyTavern characters/ and chats/ folders, mounted read-only.
+      # Your SillyTavern characters/ folder, mounted read-only.
       - ./characters:/data/characters:ro
-      - ./chats:/data/chats:ro
+      # Your SillyTavern chats/ folder. Mounted WITHOUT :ro so the built-in
+      # Cleaner works; it stays hidden in the UI if the mount turns out to
+      # be unwritable for the container user (the app probes for real
+      # write access at runtime, not just mount flags).
+      - ./chats:/data/chats
     environment:
       DATA_ROOT: /data
     restart: unless-stopped

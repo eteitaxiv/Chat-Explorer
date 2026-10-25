@@ -4,9 +4,9 @@ A fast, read-only web app for browsing and searching SillyTavern characters and
 chats — built for large archives where SillyTavern's own search is too slow and
 too shallow.
 
-It mounts your SillyTavern data folder **read-only** into a Docker container and
-never writes a single byte to it. Chats download byte-for-byte in their native
-`.jsonl` format, ready to import straight back into SillyTavern.
+It mounts your SillyTavern character folder **read-only** into a Docker container;
+the chats folder can be mounted read-only too (the app is then a pure viewer) or
+writable, which additionally enables the built-in Cleaner.
 
 ## Why
 
@@ -41,7 +41,7 @@ Then open http://localhost:10008. Replace `./characters` and `./chats` in
 ```yaml
     volumes:
       - /home/you/SillyTavern/data/default-user/characters:/data/characters:ro
-      - /home/you/SillyTavern/data/default-user/chats:/data/chats:ro
+      - /home/you/SillyTavern/data/default-user/chats:/data/chats
 ```
 
 No Docker? Local dev works the same way:
@@ -54,6 +54,20 @@ DATA_ROOT=/path/to/st/data python -m uvicorn app.main:app --port 8000
 The first start indexes the archive; afterwards everything is instant. A
 **Reindex** button in the top bar rescans the folder without restarting, so
 new chats show up without taking the app down.
+
+### Cleaner (optional)
+
+If the `chats/` mount is writable by the container user, a **Cleaner** button
+appears in the top bar. It prunes old branch files (keeping the N most recently
+modified per chat), strips model reasoning traces, and drops unused swipes.
+Everything is previewed as a dry-run first; nothing is touched until you press
+Apply. If the mount is read-only (or the container user can't write to it), the
+Cleaner stays hidden and its API returns 403 — the app remains a pure viewer.
+
+For the Cleaner to work, set `user:` in `docker-compose.yml` to the `uid:gid`
+that owns your SillyTavern chats folder on the host (check with `id -u` / `id -g`,
+e.g. `1000:1000`). Nothing is hardcoded, so `0:0` or `100999:100999` work too —
+whatever matches your SillyTavern setup.
 
 ## What it shows
 
@@ -114,8 +128,9 @@ ordinary user/assistant messages and are always searched normally.
   read from PNG `tEXt` chunks (`chara` / `ccv3`); plain JSON cards are supported
   too. Group chats (`chats/<group>/...`) appear as ordinary characters with a
   "no card" badge if no matching card file exists.
-- The app is read-only by design: the mount is `:ro`, and the code opens nothing
-  under the data root for writing. The only output it produces is the zip you
-  explicitly ask for. It never phones home — everything runs locally.
+- The app is read-only by design unless you deliberately mount `chats/` writable:
+the only writes are the Cleaner's (explicitly applied by you) and the zip you
+ask for. With a read-only mount, no code path can write anything. It never
+phones home — everything runs locally.
 - Corrupt lines and malformed files in wild archives are tolerated and flagged
   with an `error` badge rather than breaking the index.

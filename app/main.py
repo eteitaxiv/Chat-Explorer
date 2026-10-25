@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
+from . import cleaner as cleanermod
 from . import search as searchmod
 from .stindex import Index
 
@@ -46,6 +47,31 @@ def require_ready():
         raise HTTPException(status_code=503, detail="index is still building")
 
 
+def _probe_writable(avatar: str) -> bool:
+    """Real-write probe: the mount may be :ro, or a bind whose host owner
+    differs from the container user (e.g. root-owned files vs uid 1000).
+    Access bits alone can't tell us, so create and remove a temp file."""
+    fdir = index.avatar_dir.get(avatar)
+    if not fdir:
+        return False
+    probe = os.path.join(fdir, ".stce-write-probe")
+    try:
+        fd = os.open(probe, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
+        os.close(fd)
+        os.remove(probe)
+        return True
+    except OSError:
+        return False
+
+
+def _writable_avatars() -> set:
+    return {avatar for avatar in index.avatar_dir if _probe_writable(avatar)}
+
+
+def cleaner_available() -> bool:
+    return bool(index.avatar_dir) and bool(_writable_avatars())
+
+
 def _get_avatar_path(avatar: str) -> str:
     require_ready()
     if not avatar or "/" in avatar or "\\" in avatar or avatar in (".", ".."):
@@ -68,7 +94,9 @@ def _get_chat_path(avatar: str, fname: str) -> str:
 
 @app.get("/api/status")
 def api_status():
-    return index.status()
+    st = index.status()
+    st["cleaner_available"] = cleaner_available()
+    return st
 
 
 @app.post("/api/reindex")
@@ -277,6 +305,46 @@ def api_avatar(avatar: str, w: int = Query(96, ge=16, le=512)):
         return Response(content=out.getvalue(), media_type="image/png")
     except Exception:
         return FileResponse(path, media_type="image/png")
+
+
+# ---------------- cleaner ----------------
+
+@app.get("/api/cleaner/preview")
+def api_cleaner_preview(
+    actions: str = Query(""),
+    min_folder_mb: float = Query(cleanermod.DEFAULT_MIN_FOLDER_MB, ge=0),
+    keep_recent: int = Query(cleanermod.DEFAULT_KEEP_RECENT, ge=0),
+    skip_names: str = Query(""),
+):
+    """Dry-run: report what the cleaner would do. Read-only, no file is touched."""
+    require_ready()
+    if not cleaner_available():
+        raise HTTPException(403, "chats folder is mounted read-only")
+    try:
+        opts = cleanermod.parse_options(actions, min_folder_mb, keep_recent, skip_names)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return cleanermod.run(index, opts, apply=False, writable=_writable_avatars())
+
+
+@app.post("/api/cleaner/apply")
+def api_cleaner_apply(body: dict):
+    """Apply cleanup: deletes branch files and rewrites .jsonl files in place."""
+    require_ready()
+    if not cleaner_available():
+        raise HTTPException(403, "chats folder is mounted read-only")
+    try:
+        opts = cleanermod.parse_options(
+            body.get("actions") or "",
+            float(body.get("min_folder_mb", cleanermod.DEFAULT_MIN_FOLDER_MB)),
+            int(body.get("keep_recent", cleanermod.DEFAULT_KEEP_RECENT)),
+            body.get("skip_names") or "",
+        )
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
+    result = cleanermod.run(index, opts, apply=True, writable=_writable_avatars())
+    _start_build()
+    return result
 
 
 # ---------------- static frontend ----------------
