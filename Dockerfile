@@ -4,11 +4,13 @@ WORKDIR /srv
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends liblzma5 ca-certificates \
+    && apt-get install -y --no-install-recommends --only-upgrade apt libapt-pkg7.0 zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade \
-        "pip>=26.2.0" "setuptools>=84.1.0" "urllib3>=2.8.0" "msgpack>=1.2.1" \
+        "pip>=26.2.0" "setuptools>=84.1.0" "urllib3>=2.8.0" "msgpack>=1.2.3" \
+        "opentelemetry-api>=1.45.2" \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app

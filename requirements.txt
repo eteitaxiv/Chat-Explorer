@@ -6,4 +6,4 @@ pillow>=13.0.0
 # fixed versions listed in the advisories.
 setuptools>=84.1.0
 urllib3>=2.8.0
-msgpack>=1.2.1
+msgpack>=1.2.3
